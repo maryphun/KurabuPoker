@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="#A3E8C1" role="img" aria-labelledby="title">
+  <title id="title">Kurabu Poker crab logo</title>
+  <defs>
+    <mask id="club" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="white"/>
+      <g fill="black">
+        <circle cx="256" cy="257" r="27"/>
+        <circle cx="231" cy="291" r="29"/>
+        <circle cx="281" cy="291" r="29"/>
+        <path d="M256 292C255 317 249 335 240 349H272C263 335 257 317 256 292Z"/>
+      </g>
+    </mask>
+    <g id="left">
+      <path d="M146 246C116 242 99 223 93 198L116 185C117 209 133 219 153 223Z"/>
+      <path d="M100 204C68 201 47 180 49 149C50 112 83 78 119 74C125 73 128 77 126 84L113 123L143 99C148 95 152 97 155 103C179 149 151 199 119 204Z"/>
+      <path d="M151 272C101 256 63 274 39 310C34 319 41 326 49 321C83 299 112 296 147 307Z"/>
+      <path d="M148 315C104 311 73 339 65 369C63 379 71 383 78 375C101 350 121 346 158 348Z"/>
+      <path d="M165 349C129 351 104 379 104 409C104 419 113 422 119 412C134 386 149 378 182 373Z"/>
+      <path d="M202 231L196 198L212 195L219 229Z"/>
+      <circle cx="203" cy="186" r="17"/>
+    </g>
+  </defs>
+  <use href="#left"/>
+  <use href="#left" transform="translate(512 0) scale(-1 1)"/>
+  <ellipse cx="256" cy="302" rx="117" ry="90" mask="url(#club)"/>
+</svg>
