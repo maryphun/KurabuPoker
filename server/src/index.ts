@@ -47,12 +47,14 @@ async function register(request: Request, env: Env) {
   const username = text(body.username).toLowerCase(), password = text(body.password), profile: ProfileInput = { nickname: text(body.nickname), goal: text(body.goal), experience: text(body.experience), playFormat: text(body.playFormat) }
   if (!validUsername(username) || !validPassword(password) || !validNickname(profile.nickname) || !profile.goal) return json({ error: 'invalid_input' }, 400)
   const accountId = id(), createdAt = now(), hash = await passwordHash(password), publicId = id().replaceAll('-', '').slice(0, 16)
+  const recovery = Array.from({ length: 10 }, () => crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase())
   try { await env.DB.batch([
     env.DB.prepare('INSERT INTO accounts (id, username, password_hash, created_at) VALUES (?1, ?2, ?3, ?4)').bind(accountId, username, hash, createdAt),
     env.DB.prepare('INSERT INTO profiles (account_id, nickname, goal, experience, play_format, public_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(accountId, profile.nickname.trim(), profile.goal, profile.experience || null, profile.playFormat || null, publicId),
     env.DB.prepare('INSERT INTO memberships (account_id, status, updated_at) VALUES (?1, \'free\', ?2)').bind(accountId, createdAt),
+    ...await Promise.all(recovery.map(async code => env.DB!.prepare('INSERT INTO recovery_codes (id, account_id, code_hash) VALUES (?1, ?2, ?3)').bind(id(), accountId, 'sha256$' + await digest(code)))),
   ]) } catch { return json({ error: 'username_unavailable' }, 409) }
-  return json({ account: { id: accountId, username, nickname: profile.nickname.trim(), goal: profile.goal, publicId }, membership: { status: 'free' } }, 201)
+  return json({ account: { id: accountId, username, nickname: profile.nickname.trim(), goal: profile.goal, publicId }, membership: { status: 'free' }, recoveryCodes: recovery }, 201)
 }
 async function login(request: Request, env: Env) {
   if (!env.DB) return json({ error: 'database_unconfigured' }, 503)

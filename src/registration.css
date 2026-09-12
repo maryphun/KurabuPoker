@@ -12,3 +12,5 @@
 .registration-review dt { color: #8fa99a; }
 .registration-review dd { margin: 0; color: #e0ece4; }
 .registration-error { color: #f0b7b7; border: 1px solid #6e4246; background: #3b2428; border-radius: 7px; padding: 11px 13px; font-size: 12px; line-height: 1.7; }
+.recovery-codes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin: 18px 0; padding: 13px; background: #101a14; border: 1px solid #3c5443; border-radius: 8px; }
+.recovery-codes code { color: #d7f3df; font-size: 12px; letter-spacing: .08em; }.recovery-confirm { margin: 0 0 20px; }

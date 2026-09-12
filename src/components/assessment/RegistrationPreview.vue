@@ -7,13 +7,13 @@ import { accountGoals, experienceOptions, isValidAccountDraft, playFormatOptions
 import { registerAccount } from '@/lib/api'
 const props = defineProps<{ open: boolean }>()
 const emit = defineEmits<{ 'update:open': [value: boolean] }>()
-const step = ref<1 | 2 | 3>(1), completed = ref(false), submitting = ref(false), serverError = ref(''), errors = ref<AccountFieldErrors>({})
+const step = ref<1 | 2 | 3>(1), completed = ref(false), submitting = ref(false), savedRecovery = ref(false), serverError = ref(''), recoveryCodes = ref<string[]>([]), errors = ref<AccountFieldErrors>({})
 const draft = ref<AccountDraft>({ username: '', password: '', nickname: '', goal: '', experience: '', playFormat: '', consent: false })
 const canContinue = computed(() => {
   const found = validateAccountDraft({ ...draft.value, nickname: '仮', goal: 'カジノで勝ちたい', consent: true })
   return !found.username && !found.password
 })
-watch(() => props.open, (open) => { if (open) { step.value = 1; completed.value = false; submitting.value = false; serverError.value = ''; errors.value = {}; draft.value = { username: '', password: '', nickname: '', goal: '', experience: '', playFormat: '', consent: false } } })
+watch(() => props.open, (open) => { if (open) { step.value = 1; completed.value = false; submitting.value = false; savedRecovery.value = false; recoveryCodes.value = []; serverError.value = ''; errors.value = {}; draft.value = { username: '', password: '', nickname: '', goal: '', experience: '', playFormat: '', consent: false } } })
 function next() {
   errors.value = {}
   if (step.value === 1) { const found = validateAccountDraft({ ...draft.value, nickname: '仮', goal: 'カジノで勝ちたい', consent: true }); if (found.username || found.password) { errors.value = found; return }; step.value = 2; return }
@@ -22,7 +22,7 @@ function next() {
 async function finish() {
   if (!isValidAccountDraft(draft.value)) { step.value = 2; errors.value = validateAccountDraft(draft.value); return }
   submitting.value = true; serverError.value = ''
-  try { await registerAccount({ username: normalizeUsername(draft.value.username), password: draft.value.password, nickname: draft.value.nickname, goal: draft.value.goal, experience: draft.value.experience || undefined, playFormat: draft.value.playFormat || undefined }); completed.value = true }
+  try { const result = await registerAccount({ username: normalizeUsername(draft.value.username), password: draft.value.password, nickname: draft.value.nickname, goal: draft.value.goal, experience: draft.value.experience || undefined, playFormat: draft.value.playFormat || undefined }); recoveryCodes.value = result.recoveryCodes; completed.value = true }
   catch (error) { serverError.value = error instanceof Error && error.message === 'database_unconfigured' ? 'サーバーのデータベースがまだ設定されていません。Cloudflare D1接続後に登録できます。' : '登録に失敗しました。入力内容を確認して、もう一度お試しください。' }
   finally { submitting.value = false }
 }
@@ -30,7 +30,7 @@ async function finish() {
 <template>
   <AppDialog :open="open" title="学びを続ける、あなたの場所。" description="アカウント登録のローカル試作です。認証・メール送信・決済はまだ接続されていません。" @update:open="emit('update:open', $event)">
     <div class="preview-notice">入力内容はこの画面の試作状態にのみ使われ、アカウントやパスワードは保存されません。</div>
-    <div v-if="completed" class="registration-complete" role="status"><Check :size="28" /><h3>登録内容を確認しました</h3><p>本番登録には認証サービスとサーバー接続が必要です。次の実装で安全な登録処理につなぎます。</p><Button class="primary-action" @click="emit('update:open', false)">診断結果に戻る</Button></div>
+    <div v-if="completed" class="registration-complete" role="status"><Check :size="28" /><h3>アカウントを作成しました</h3><p>復旧コードはこの画面で一度だけ表示されます。安全な場所に保存してください。</p><div class="recovery-codes"><code v-for="code in recoveryCodes" :key="code">{{ code }}</code></div><label class="consent-label recovery-confirm"><input v-model="savedRecovery" type="checkbox" />復旧コードを保存しました</label><Button class="primary-action" :disabled="!savedRecovery" @click="emit('update:open', false)">診断結果に戻る</Button></div>
     <template v-else>
       <div class="registration-steps" aria-label="登録ステップ"><strong :class="{ active: step === 1 }">1 アカウント</strong><span>→</span><strong :class="{ active: step === 2 }">2 プロフィール</strong><span>→</span><strong :class="{ active: step === 3 }">3 確認</strong></div>
       <form v-if="step === 1" class="registration-form" @submit.prevent="next">
