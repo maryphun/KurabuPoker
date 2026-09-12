@@ -22,7 +22,7 @@ defineEmits<{ navigate: [target: 'dashboard' | 'assessment' | 'manager']; auth: 
     <div class="sidebar-bottom">
       <button v-if="showManager" :class="['nav-item', { active: current === 'manager' }]" aria-label="問題管理" @click="$emit('navigate', 'manager')"><ListChecks :size="18" /><span>問題管理</span></button>
       <button v-for="item in accountNavigation" :key="item.label" class="nav-item" disabled><component :is="item.icon" :size="18" :stroke-width="1.65" />{{ item.label }}</button>
-      <button class="profile profile-button" type="button" @click="$emit('auth')"><div class="avatar">G</div><div><strong>ゲスト</strong><span>アカウント登録/ログイン</span></div><ChevronDown :size="15" /></button>
+      <button class="profile profile-button" type="button" @click="$emit('auth')"><div class="avatar">G</div><div><strong>ゲスト</strong><span>アカウント登録/<br />ログイン</span></div><ChevronDown :size="15" /></button>
     </div>
   </aside>
 </template>
