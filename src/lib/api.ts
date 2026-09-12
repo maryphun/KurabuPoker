@@ -9,6 +9,6 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   return body as T
 }
 
-export function registerAccount(input: { username: string; password: string; nickname: string; goal: string; experience?: string; playFormat?: string }) {
+export function registerAccount(input: { username: string; password: string; nickname: string; goal: string; experience?: string; playFormat?: string; consentVersion: string }) {
   return apiRequest<{ account: { id: string; username: string; nickname: string; goal: string; publicId: string }; recoveryCodes: string[] }>('/api/auth/register', { method: 'POST', body: JSON.stringify(input) })
 }

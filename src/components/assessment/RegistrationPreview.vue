@@ -22,7 +22,7 @@ function next() {
 async function finish() {
   if (!isValidAccountDraft(draft.value)) { step.value = 2; errors.value = validateAccountDraft(draft.value); return }
   submitting.value = true; serverError.value = ''
-  try { const result = await registerAccount({ username: normalizeUsername(draft.value.username), password: draft.value.password, nickname: draft.value.nickname, goal: draft.value.goal, experience: draft.value.experience || undefined, playFormat: draft.value.playFormat || undefined }); recoveryCodes.value = result.recoveryCodes; completed.value = true }
+  try { const result = await registerAccount({ username: normalizeUsername(draft.value.username), password: draft.value.password, nickname: draft.value.nickname, goal: draft.value.goal, experience: draft.value.experience || undefined, playFormat: draft.value.playFormat || undefined, consentVersion: 'draft-2026-09-13' }); recoveryCodes.value = result.recoveryCodes; completed.value = true }
   catch (error) { serverError.value = error instanceof Error && error.message === 'database_unconfigured' ? 'サーバーのデータベースがまだ設定されていません。Cloudflare D1接続後に登録できます。' : '登録に失敗しました。入力内容を確認して、もう一度お試しください。' }
   finally { submitting.value = false }
 }

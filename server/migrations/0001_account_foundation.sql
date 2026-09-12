@@ -79,6 +79,31 @@ CREATE TABLE IF NOT EXISTS billing_events (
   received_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS external_identities (
+  id TEXT PRIMARY KEY NOT NULL,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  issuer TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (issuer, subject)
+);
+
+CREATE TABLE IF NOT EXISTS consent_records (
+  id TEXT PRIMARY KEY NOT NULL,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  consent_type TEXT NOT NULL,
+  version TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS audit_events (
+  id TEXT PRIMARY KEY NOT NULL,
+  account_id TEXT,
+  event_type TEXT NOT NULL,
+  metadata_json TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_profiles_public_id ON profiles(public_id);
 CREATE INDEX IF NOT EXISTS idx_sessions_account ON sessions(account_id);
 CREATE INDEX IF NOT EXISTS idx_assessment_account ON assessment_attempts(account_id);

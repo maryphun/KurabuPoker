@@ -43,9 +43,9 @@ async function currentAccount(request: Request, env: Env) {
 }
 async function register(request: Request, env: Env) {
   if (!env.DB) return json({ error: 'database_unconfigured' }, 503)
-  const body = await request.json<{ username?: string; password?: string; nickname?: string; goal?: string; experience?: string; playFormat?: string }>().catch(() => ({}))
+  const body = await request.json<{ username?: string; password?: string; nickname?: string; goal?: string; experience?: string; playFormat?: string; consentVersion?: string }>().catch(() => ({}))
   const username = text(body.username).toLowerCase(), password = text(body.password), profile: ProfileInput = { nickname: text(body.nickname), goal: text(body.goal), experience: text(body.experience), playFormat: text(body.playFormat) }
-  if (!validUsername(username) || !validPassword(password) || !validNickname(profile.nickname) || !profile.goal) return json({ error: 'invalid_input' }, 400)
+  if (!validUsername(username) || !validPassword(password) || !validNickname(profile.nickname) || !profile.goal || !text(body.consentVersion)) return json({ error: 'invalid_input' }, 400)
   const accountId = id(), createdAt = now(), hash = await passwordHash(password), publicId = id().replaceAll('-', '').slice(0, 16)
   const recovery = Array.from({ length: 10 }, () => crypto.randomUUID().replaceAll('-', '').slice(0, 12).toUpperCase())
   try { await env.DB.batch([
@@ -53,6 +53,7 @@ async function register(request: Request, env: Env) {
     env.DB.prepare('INSERT INTO profiles (account_id, nickname, goal, experience, play_format, public_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6)').bind(accountId, profile.nickname.trim(), profile.goal, profile.experience || null, profile.playFormat || null, publicId),
     env.DB.prepare('INSERT INTO memberships (account_id, status, updated_at) VALUES (?1, \'free\', ?2)').bind(accountId, createdAt),
     ...await Promise.all(recovery.map(async code => env.DB!.prepare('INSERT INTO recovery_codes (id, account_id, code_hash) VALUES (?1, ?2, ?3)').bind(id(), accountId, 'sha256$' + await digest(code)))),
+    env.DB.prepare('INSERT INTO consent_records (id, account_id, consent_type, version, created_at) VALUES (?1, ?2, \'terms_privacy\', ?3, ?4)').bind(id(), accountId, text(body.consentVersion), createdAt),
   ]) } catch { return json({ error: 'username_unavailable' }, 409) }
   return json({ account: { id: accountId, username, nickname: profile.nickname.trim(), goal: profile.goal, publicId }, membership: { status: 'free' }, recoveryCodes: recovery }, 201)
 }
@@ -75,6 +76,11 @@ async function updateProfile(request: Request, env: Env) {
   if (!validNickname(nickname) || !goal) return json({ error: 'invalid_input' }, 400)
   await env.DB.prepare('UPDATE profiles SET nickname = ?1, goal = ?2, experience = ?3, play_format = ?4 WHERE account_id = ?5').bind(nickname.trim(), goal, text(body.experience) || null, text(body.playFormat) || null, account.id).run()
   return me(request, env)
+}
+async function changePassword(request: Request, env: Env) {
+  const account = await currentAccount(request, env); if (!account || !env.DB) return json({ error: 'unauthorized' }, 401)
+  const body = await request.json<{ currentPassword?: string; newPassword?: string }>().catch(() => ({})); const row = await env.DB.prepare('SELECT password_hash FROM accounts WHERE id = ?1').bind(account.id).first<{ password_hash: string | null }>(); if (!row?.password_hash || !(await passwordMatches(text(body.currentPassword), row.password_hash)) || !validPassword(text(body.newPassword))) return json({ error: 'invalid_credentials' }, 401)
+  const timestamp = now(); await env.DB.batch([env.DB.prepare('UPDATE accounts SET password_hash = ?1 WHERE id = ?2').bind(await passwordHash(text(body.newPassword)), account.id), env.DB.prepare('UPDATE sessions SET revoked_at = ?1 WHERE account_id = ?2 AND revoked_at IS NULL').bind(timestamp, account.id)]); return json({ ok: true })
 }
 async function deleteAccount(request: Request, env: Env) {
   const account = await currentAccount(request, env); if (!account || !env.DB) return json({ error: 'unauthorized' }, 401)
@@ -103,16 +109,21 @@ async function recoveryCodes(request: Request, env: Env) {
 }
 async function recover(request: Request, env: Env) {
   if (!env.DB) return json({ error: 'database_unconfigured' }, 503)
-  const body = await request.json<{ username?: string; code?: string }>().catch(() => ({})); const username = text(body.username).toLowerCase(), code = text(body.code).toUpperCase()
+  const body = await request.json<{ username?: string; code?: string; newPassword?: string }>().catch(() => ({})); const username = text(body.username).toLowerCase(), code = text(body.code).toUpperCase(), newPassword = text(body.newPassword)
   const account = await env.DB.prepare('SELECT a.id, a.username FROM accounts a JOIN recovery_codes r ON r.account_id = a.id WHERE a.username = ?1 AND r.used_at IS NULL AND a.deleted_at IS NULL').bind(username).first<{ id: string; username: string }>()
   if (!account || !code) return json({ error: 'invalid_recovery_code' }, 401)
   const match = await env.DB.prepare('SELECT id FROM recovery_codes WHERE account_id = ?1 AND code_hash = ?2 AND used_at IS NULL').bind(account.id, 'sha256$' + await digest(code)).first<{ id: string }>()
-  if (!match) return json({ error: 'invalid_recovery_code' }, 401)
-  await env.DB.prepare('UPDATE recovery_codes SET used_at = ?1 WHERE id = ?2 AND used_at IS NULL').bind(now(), match.id).run()
+  if (!match || !validPassword(newPassword)) return json({ error: 'invalid_recovery_code' }, 401)
+  const timestamp = now(); await env.DB.batch([
+    env.DB.prepare('UPDATE recovery_codes SET used_at = ?1 WHERE id = ?2 AND used_at IS NULL').bind(timestamp, match.id),
+    env.DB.prepare('UPDATE accounts SET password_hash = ?1 WHERE id = ?2').bind(await passwordHash(newPassword), account.id),
+    env.DB.prepare('UPDATE sessions SET revoked_at = ?1 WHERE account_id = ?2 AND revoked_at IS NULL').bind(timestamp, account.id),
+    env.DB.prepare('INSERT INTO audit_events (id, account_id, event_type, metadata_json, created_at) VALUES (?1, ?2, \'password_recovered\', \'{}\', ?3)').bind(id(), account.id, timestamp),
+  ])
   const raw = `${crypto.randomUUID()}${crypto.randomUUID()}`, expires = new Date(Date.now() + 30 * 86400000).toISOString(); await env.DB.prepare('INSERT INTO sessions (id_hash, account_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)').bind(await digest(raw), account.id, expires, now()).run()
   return json({ account: { id: account.id, username: account.username }, expiresAt: expires }, 200, { 'set-cookie': `${sessionCookie(cookieName(env), raw)}, ${csrfCookie(crypto.randomUUID())}` })
 }
-async function membershipStatus(request: Request, env: Env) { const account = await currentAccount(request, env); if (!account || !env.DB) return json({ error: 'unauthorized' }, 401); const row = await env.DB.prepare('SELECT status, trial_started_at AS trialStartedAt, trial_ends_at AS trialEndsAt, paid_until AS paidUntil FROM memberships WHERE account_id = ?1').bind(account.id).first(); return json({ membership: row }) }
+async function membershipStatus(request: Request, env: Env) { const account = await currentAccount(request, env); if (!account || !env.DB) return json({ error: 'unauthorized' }, 401); const row = await env.DB.prepare('SELECT status, trial_started_at AS trialStartedAt, trial_ends_at AS trialEndsAt, paid_until AS paidUntil FROM memberships WHERE account_id = ?1').bind(account.id).first<{ status: string; trialStartedAt?: string; trialEndsAt?: string; paidUntil?: string }>(); const status = row?.status === 'trial' && row.trialEndsAt && row.trialEndsAt <= now() ? 'free' : (row?.status || 'free'); return json({ membership: { ...row, status, trialEligible: !row?.trialStartedAt, capabilities: { diagnosisSave: true, rangesCustomize: status === 'trial' || status === 'paid', drillsRun: status === 'trial' || status === 'paid', handsReview: status === 'trial' || status === 'paid', communityPublish: status === 'trial' || status === 'paid', paidCourses: status === 'trial' || status === 'paid' } } }) }
 async function cancelMembership(request: Request, env: Env) { const account = await currentAccount(request, env); if (!account || !env.DB) return json({ error: 'unauthorized' }, 401); await env.DB.prepare("UPDATE memberships SET status = 'free', paid_until = NULL, updated_at = ?1 WHERE account_id = ?2").bind(now(), account.id).run(); return json({ status: 'free' }) }
 async function adminQuestions(request: Request, env: Env) { const account = await currentAccount(request, env); if (!account || !env.DB) return json({ error: 'unauthorized' }, 401); const role = await env.DB.prepare('SELECT role FROM accounts WHERE id = ?1').bind(account.id).first<{ role: string }>(); if (role?.role !== 'admin') return json({ error: 'forbidden' }, 403); if (request.method === 'GET') { const rows = await env.DB.prepare('SELECT id, payload_json AS payload, enabled, created_at AS createdAt FROM admin_questions ORDER BY created_at DESC').all(); return json({ questions: rows.results }) } const body = await request.json<{ id?: string; payload?: unknown; enabled?: boolean }>().catch(() => ({})); if (!body.id || body.payload === undefined) return json({ error: 'invalid_input' }, 400); await env.DB.prepare('INSERT INTO admin_questions (id, payload_json, enabled, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4) ON CONFLICT(id) DO UPDATE SET payload_json = excluded.payload_json, enabled = excluded.enabled, updated_at = excluded.updated_at').bind(body.id, JSON.stringify(body.payload), body.enabled === false ? 0 : 1, now()).run(); return json({ ok: true }) }
 async function oauthStart(request: Request, env: Env, provider: 'google' | 'line') {
@@ -145,12 +156,13 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/billing/square/checkout' && request.method === 'POST') return squareCheckout(request, env)
   if (url.pathname === '/api/billing/square/webhook' && request.method === 'POST') return squareWebhook(request, env)
   if (url.pathname === '/api/account/profile' && request.method === 'PATCH') return updateProfile(request, env)
+  if (url.pathname === '/api/account/password' && request.method === 'POST') return changePassword(request, env)
   if (url.pathname === '/api/account' && request.method === 'DELETE') return deleteAccount(request, env)
   if (url.pathname === '/api/account/recovery-codes' && request.method === 'POST') return recoveryCodes(request, env)
   if (url.pathname === '/api/assessments' && request.method === 'POST') return createAssessment(request, env)
   if (url.pathname === '/api/assessments/history' && request.method === 'GET') return assessmentHistory(request, env)
   if (url.pathname.startsWith('/api/assessments/') && url.pathname.endsWith('/complete') && request.method === 'POST') return completeAssessment(request, env, url.pathname.split('/')[3] || '')
-  if (url.pathname.startsWith('/api/public-profiles/') && request.method === 'GET') return publicProfile(request, env)
+  if ((url.pathname.startsWith('/api/public-profiles/') || url.pathname.startsWith('/api/profiles/')) && request.method === 'GET') return publicProfile(request, env)
   if (url.pathname === '/api/admin/questions' && (request.method === 'GET' || request.method === 'POST')) return adminQuestions(request, env)
   return json({ error: 'not_found' }, 404)
 } } satisfies ExportedHandler<Env>
