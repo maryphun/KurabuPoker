@@ -3,7 +3,9 @@ export interface Env {
   DB?: D1Database
   SESSION_COOKIE?: string
   GOOGLE_CLIENT_ID?: string
+  GOOGLE_CLIENT_SECRET?: string
   LINE_CLIENT_ID?: string
+  LINE_CLIENT_SECRET?: string
   SQUARE_APPLICATION_ID?: string
   SQUARE_ENVIRONMENT?: string
   SQUARE_WEBHOOK_SIGNATURE_KEY?: string
@@ -134,6 +136,14 @@ async function oauthStart(request: Request, env: Env, provider: 'google' | 'line
   const challenge = await pkceChallenge(verifier), auth = provider === 'google' ? 'https://accounts.google.com/o/oauth2/v2/auth' : 'https://access.line.me/oauth2/v2.1/authorize'; const params = new URLSearchParams({ response_type: 'code', client_id: clientId, redirect_uri: redirectUri, state, scope: provider === 'google' ? 'openid profile' : 'openid profile', code_challenge: challenge, code_challenge_method: 'S256' }); return Response.redirect(`${auth}?${params}`, 302)
 }
 async function oauthCallback(request: Request, env: Env, provider: 'google' | 'line') { const url = new URL(request.url); const state = url.searchParams.get('state'); const code = url.searchParams.get('code'); if (!state || !code || !env.DB) return json({ error: 'oauth_callback_invalid' }, 400); const row = await env.DB.prepare('SELECT provider, code_verifier, redirect_uri FROM oauth_states WHERE state_hash = ?1 AND expires_at > ?2').bind(await digest(state), now()).first<{ provider: string; code_verifier: string; redirect_uri: string }>(); if (!row || row.provider !== provider) return json({ error: 'oauth_state_invalid' }, 400); await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ?1').bind(await digest(state)).run(); return json({ error: 'oauth_exchange_not_configured', provider, message: 'トークン交換とverified issuer/subject紐付けはプロバイダー資格情報設定後に有効になります。' }, 501) }
+async function oauthCallbackV2(request: Request, env: Env, provider: 'google' | 'line') {
+  const url = new URL(request.url), state = url.searchParams.get('state'), code = url.searchParams.get('code'); if (!state || !code || !env.DB) return json({ error: 'oauth_callback_invalid' }, 400)
+  const row = await env.DB.prepare('SELECT provider, code_verifier, redirect_uri FROM oauth_states WHERE state_hash = ?1 AND expires_at > ?2').bind(await digest(state), now()).first<{ provider: string; code_verifier: string; redirect_uri: string }>(); if (!row || row.provider !== provider) return json({ error: 'oauth_state_invalid' }, 400)
+  const clientId = provider === 'google' ? env.GOOGLE_CLIENT_ID : env.LINE_CLIENT_ID, clientSecret = provider === 'google' ? env.GOOGLE_CLIENT_SECRET : env.LINE_CLIENT_SECRET; if (!clientId || !clientSecret) return json({ error: 'oauth_provider_unconfigured' }, 503)
+  const tokenUrl = provider === 'google' ? 'https://oauth2.googleapis.com/token' : 'https://api.line.me/oauth2/v2.1/token'; const tokenResponse = await fetch(tokenUrl, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: row.redirect_uri, client_id: clientId, client_secret: clientSecret, code_verifier: row.code_verifier }) }); if (!tokenResponse.ok) return json({ error: 'oauth_token_exchange_failed' }, 401); const token = await tokenResponse.json<{ access_token?: string; id_token?: string }>(); if (!token.access_token) return json({ error: 'oauth_token_missing' }, 401)
+  const profileResponse = await fetch(provider === 'google' ? 'https://openidconnect.googleapis.com/v1/userinfo' : 'https://api.line.me/v2/profile', { headers: { authorization: `Bearer ${token.access_token}` } }); if (!profileResponse.ok) return json({ error: 'oauth_profile_failed' }, 401); const profile = await profileResponse.json<{ sub?: string; userId?: string; name?: string }>(); const subject = profile.sub || profile.userId; if (!subject) return json({ error: 'oauth_subject_missing' }, 401)
+  await env.DB.prepare('DELETE FROM oauth_states WHERE state_hash = ?1').bind(await digest(state)).run(); return json({ provider, issuer: provider === 'google' ? 'https://accounts.google.com' : 'https://access.line.me', subject, suggestedNickname: text(profile.name), message: '認証済みです。ユーザー名・パスワード・学習目的を入力して登録を続けてください。' })
+}
 async function squareCheckout(request: Request, env: Env) { if (!env.SQUARE_APPLICATION_ID) return json({ error: 'square_not_configured' }, 503); return json({ error: 'square_checkout_not_implemented', message: 'Squareの決済リンク作成は資格情報とプラン価格設定後に有効になります。' }, 501) }
 async function squareWebhook(request: Request, env: Env) { if (!env.SQUARE_APPLICATION_ID || !env.SQUARE_WEBHOOK_SIGNATURE_KEY) return json({ error: 'square_not_configured' }, 503); const payload = await request.text(), signature = request.headers.get('x-square-hmacsha256-signature') || '', notificationUrl = env.SQUARE_WEBHOOK_URL || request.url, expected = await hmacSignature(env.SQUARE_WEBHOOK_SIGNATURE_KEY, notificationUrl + payload); if (!constantTimeEqual(signature, expected)) return json({ error: 'invalid_webhook_signature' }, 403); if (env.DB) await env.DB.prepare('INSERT INTO billing_events (id, provider, event_type, payload_json, received_at) VALUES (?1, \'square\', ?2, ?3, ?4)').bind(id(), 'square', payload, now()).run(); return json({ received: true }) }
 const planPrice = (interval: string) => interval === 'annual' ? 15840 : interval === 'monthly' ? 1650 : 0
@@ -149,9 +159,9 @@ export default { async fetch(request: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/auth/login' && request.method === 'POST') return login(request, env)
   if (url.pathname === '/api/auth/recover' && request.method === 'POST') return recover(request, env)
   if (url.pathname === '/api/auth/google/start' && request.method === 'GET') return oauthStart(request, env, 'google')
-  if (url.pathname === '/api/auth/google/callback' && request.method === 'GET') return oauthCallback(request, env, 'google')
+  if (url.pathname === '/api/auth/google/callback' && request.method === 'GET') return oauthCallbackV2(request, env, 'google')
   if (url.pathname === '/api/auth/line/start' && request.method === 'GET') return oauthStart(request, env, 'line')
-  if (url.pathname === '/api/auth/line/callback' && request.method === 'GET') return oauthCallback(request, env, 'line')
+  if (url.pathname === '/api/auth/line/callback' && request.method === 'GET') return oauthCallbackV2(request, env, 'line')
   if (url.pathname === '/api/auth/logout' && request.method === 'POST') return logout(request, env)
   if (url.pathname === '/api/auth/session' && request.method === 'GET') return me(request, env)
   if (url.pathname === '/api/membership/trial' && request.method === 'POST') return startTrial(request, env)
