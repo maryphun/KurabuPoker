@@ -1,22 +1,72 @@
-# KurabuPoker
+# クラブポーカー　ポーカー学習クラブ
 
-A static, responsive poker education dashboard built with Vue 3, TypeScript, Vite, Tailwind CSS 4, and shadcn-vue components. The supplied SVG logo is preserved in `public/kurabu-poker-logo.svg` and used as the brand mark and favicon.
+Vue 3 + TypeScript + Vite + Tailwind CSS 4 + shadcn-vueで作った、日本語のポーカー学習アプリです。
 
-## Development
+## 起動
 
 ```sh
 npm install
 npm run dev
 ```
 
-`npm run build` runs strict TypeScript validation and produces the production site in `dist`. `npm run preview` serves that build.
+- `npm run build`：型検査と本番ビルド。
+- `npm test`：問題集検証、出題、採点、EVロス集計のテスト（Node 24以上）。
+- `npm run preview`：本番ビルドの確認。
 
-## Structure
+## 実力診断
 
-- `src/components/layout` — application shell components.
-- `src/components/dashboard` — independent dashboard panels.
-- `src/components/ui` — locally owned shadcn-vue primitives.
-- `src/data/dashboard.ts` — sample presentation data, ready to replace with API-backed composables.
-- `src/style.css` — brand tokens, layout, and responsive styles.
+初回表示時に診断の案内を開きます。同じタブでは一度閉じた案内を自動で再表示しません。サイドバーの「実力診断」またはダッシュボードのボタンから再度開始できます。
 
-This first version is deliberately presentation-only: no authentication, routes, API calls, persistence, or working product controls. Sample data is labeled in the header. Future pages can be added with Vue Router; service/composable modules can replace fixtures without rewriting the layout. Use `npx shadcn-vue@latest add <component>` to extend the UI primitives.
+リングゲームとトーナメントを選択し、公開中の問題から重複なしで10問をランダムに出題します。初期問題は各形式27問、合計54問。公開問題が10問未満の形式は不足数を案内し、開始を無効にします。出題した問題はスナップショットとして保持するので、後から問題集を変更しても診断途中の採点基準は変わりません。
+
+各ハンドには、手札、ボード、ポジション、ポット、コール額、実効スタック、アクション履歴、相手5人のタイプ・スタック・参加状態があります。LAG（ルース・アグレッシブ）、LP（ルース・パッシブ）、TAG（タイト・アグレッシブ）、TP（タイト・パッシブ）を指定できます。
+
+6席を楕円テーブルの周囲に配置し、Heroにはタイプを表示しません。下の短いアクション一覧と前／次ボタンで履歴を移動できます。再生ボタンは最初から1.1秒間隔で進み、現在の判断場面で停止します。途中で一時停止でき、ハンド変更・画面終了時にはタイマーを解除します。ポット、残りスタック、フォールド状態、ボードを各時点に戻して表示します。
+
+回答はレイズ・オールイン・フォールド・コールの4枠。ベットがない場面ではベット・チェックに切り替わり、不可能な選択は無効です。レイズ額は数値入力とスライダーで指定できます。総額と追加額を区別し、入力額を結果にも表示します。
+
+結果には正答率、今回の問題に限った参考レベル、分野別成績、合計と平均EVロス、回答時間、全ハンドの選択肢と解説を表示します。ダッシュボードのサンプル学習統計とは独立しています。
+
+## 問題管理
+
+localhostの開発サーバーで、サイドバーの「問題管理」を開きます。
+
+1. 既存問題を選ぶか「問題を追加」「複製」を使います。
+2. ゲーム形式、ハンド、相手のタイプ、選択肢、各選択肢のEVと解説を設定します。
+3. 「診断に出題する」をオンにし「問題を保存」を押します。
+4. 次に開始する診断からその内容が反映されます。
+
+保存先は同一オリジンのブラウザlocalStorageです。複数ユーザー共有のデータベースではありません。JSON書き出しでバックアップし、読み込みで別のブラウザに移せます。読み込みは置き換え前に検証します。保存、削除、読み込みの直前の状態を「元に戻す」で復元できます（画面を離れるまで）。最後の1問は削除できませんが出題をオフにできます。
+
+問題管理画面は開発モードのみ表示します。これは管理者認証ではありません。本番で管理画面を公開する場合は認証・権限制御・APIを追加してください。クライアント側診断なので、回答データの秘匿や不正対策は未実装です。
+
+初期問題は `src/data/question-bank.ts`、型は `src/types/assessment.ts`、検証と採点は `src/lib/assessment.ts`、保存処理は `src/composables/useQuestionBank.ts` に分離しています。JSONスキーマのバージョンは1です。新規問題や選択肢は画面から自由に追加でき、診断UIの変更は不要です。
+
+再生・サイズ判定は `src/lib/poker-hand.ts` に分離。管理画面では、再生アクションの追加・削除・並べ替え、席、ストリート、追加チップ額を編集できます。`actions[].amountBb` はそのアクションで追加した額です。最終ポットと残りスタックから初期状態を復元するため、終点の値と履歴を一致させてください。配札イベントには `dealer` を指定します。
+
+EV選択肢の `action` に種別を、レイズ基準点の `sizeBb` にそのストリートでのレイズ後総額を指定します。`heroInvestedBb` はHeroの投入済み額、`minRaiseToBb` は最小レイズ総額です。最小から `heroInvestedBb + effectiveStackBb` まで2点以上のEVを設定し、最大点とオールインEVを一致させます。未設定のアクションのEVを自動推測しません。
+
+既存の保存データは削除しません。改変されていない初期問題だけを再生対応に更新し、元の12問が残る問題集には新しい12問を追加します（revision 2）。revision 3では新しい30問を一度だけ追加し、既存の問題文から数値の勝率・フォールド率と計算上の注意書きを取り除きます。カスタムのタイトル・EV・アクション・公開状態は保持します。変更済み・独自の旧形式問題は従来の選択肢を維持し、再生とアクション種別を管理画面で追加できます。移行は一度だけで、削除した問題を再追加しません。
+
+## EVの扱い
+
+各アクションの基準EVは作成者が設定する教材値です。ソルバーによる計算や相手タイプからの自動レンジ推定は行いません。相手のタイプ・勝率・反応率を変えた場合は、EV値と解説も更新してください。
+
+`EVロス = max(選択肢の基準EV) − 回答した選択肢の基準EV`。同率最高の選択肢も正答です。全ハンドのロスを加算し、回答数で割って1ハンド平均を表示します。少数の診断結果をbb/100や実際の勝率に外挿しません。
+
+既存24問に、状況判断を練習する30問を追加しています。コール例は `勝率 × (相手のベットを含むポット + コール額) − コール額`、勝率0%のブラフ例は `フォールド率 × ポット − コール率 × ベット額`。ナッツのベット例は `ポット + コール率 × ベット額`。一部の最小・最大ベットEVは作成者が置いた練習用基準値です。自由入力したサイズのEVは隣接基準点間の直線補間で評価し、最大基準EVとの差をロスとします。引き分けとレーキを除き、トーナメントはチップEVのみで賞金EV（ICM）は扱いません。
+
+考え方の参考：[PokerStarsのポットオッズ解説](https://www.pokerstars.com/poker/learn/lesson/pot-odds/)、[トーナメントEVの解説](https://www.pokerstars.com/poker/learn/lesson/examining-tournament-ev/)、[プレイヤースタイルの分類](https://www.pokerstars.com/poker/learn/lesson/other-poker-playing-styles/)。初期問題の数値はこれらのサイトから採った解答表ではなく、このアプリ独自の教材仮定です。
+
+## 登録画面
+
+依頼に合わせて登録画面のみのプレビューです。アカウント作成、入力情報の保存・送信、メール配信は行いません。診断結果は画面を開いている間のメモリのみで保持します。
+
+## 追加30問の構成
+
+リングゲーム・トーナメントそれぞれ、プリフロップ5問、フロップのアグレッサー2問、フロップのコーラー2問、マルチウェイ3問、ターンのアグレッサー3問です。出題中は確率を教えず、相手の行動傾向と履歴から判断します。全問がブラウザの問題管理で編集できます。
+
+追加問題のEVは暫定の教材基準値で、ソルバー未検証です。実際の戦略EVを測定したものではありません。サイズ間は既存の補間ロジックを使用します。
+
+解説の考え方の参考：[Cベット](https://www.pokerstars.com/poker/learn/lesson/c-betting/)、[マルチウェイ](https://www.pokerstars.com/poker/learn/strategies/a-guide-to-multiway-pots/)、[セミブラフ](https://www.pokerstars.com/poker/learn/lesson/bluffing/)。これらの資料は本アプリの個別EV数値を裏付けるものではありません。
+

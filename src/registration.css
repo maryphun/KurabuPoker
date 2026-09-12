@@ -1,0 +1,14 @@
+.registration-form select { appearance: auto; }
+.registration-form small { color: #8fa99a; font-size: 11px; line-height: 1.6; }
+.registration-form em { color: #f3aaa0; font-size: 11px; font-style: normal; line-height: 1.5; }
+.registration-form input[type='checkbox'] { width: auto; accent-color: #a3e8c1; }
+.consent-label { grid-template-columns: auto 1fr; align-items: start; }
+.consent-label em { grid-column: 2; }
+.registration-steps { display: flex; align-items: center; justify-content: center; gap: 9px; color: #71877a; font-size: 11px; margin: 20px 0 4px; }
+.registration-steps strong { font-weight: 500; }
+.registration-steps strong.active { color: #b9efd0; }
+.registration-provider-note { color: #8fa99a; font-size: 11px; line-height: 1.7; padding: 11px 13px; border: 1px solid #31473a; border-radius: 7px; }
+.registration-review dl { display: grid; grid-template-columns: 110px 1fr; gap: 11px 16px; margin: 8px 0; font-size: 13px; }
+.registration-review dt { color: #8fa99a; }
+.registration-review dd { margin: 0; color: #e0ece4; }
+.registration-error { color: #f0b7b7; border: 1px solid #6e4246; background: #3b2428; border-radius: 7px; padding: 11px 13px; font-size: 12px; line-height: 1.7; }

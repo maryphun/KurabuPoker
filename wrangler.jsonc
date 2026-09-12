@@ -1,0 +1,26 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "kurabu-poker-api",
+  "main": "server/src/index.ts",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "kurabu-poker-db",
+      "database_id": "d1858313-7ec7-460b-9c76-592d9bfb201a",
+      "migrations_dir": "server/migrations"
+    }
+  ],
+  "vars": { "ENVIRONMENT": "development" },
+  "env": {
+    "staging": {
+      "name": "kurabu-poker-api-staging",
+      "vars": { "ENVIRONMENT": "staging" }
+    },
+    "production": {
+      "name": "kurabu-poker-api-production",
+      "vars": { "ENVIRONMENT": "production" }
+    }
+  }
+}
