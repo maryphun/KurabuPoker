@@ -1,3 +1,5 @@
+import { argon2id } from 'hash-wasm'
+
 export interface Env {
   ENVIRONMENT: string
   DB?: D1Database
@@ -32,11 +34,10 @@ async function pkceChallenge(verifier: string) { return base64url(await crypto.s
 async function hmacSignature(key: string, value: string) { const cryptoKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']); const bytes = new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(value))); return btoa(String.fromCharCode(...bytes)) }
 function constantTimeEqual(a: string, b: string) { if (a.length !== b.length) return false; let result = 0; for (let i = 0; i < a.length; i++) result |= a.charCodeAt(i) ^ b.charCodeAt(i); return result === 0 }
 async function passwordHash(password: string, salt = crypto.randomUUID()) {
-  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveBits'])
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations: 310_000, hash: 'SHA-256' }, key, 256)
-  return `pbkdf2-sha256$${salt}$${hex(bits)}`
+  return argon2id({ password, salt, iterations: 3, memorySize: 19456, parallelism: 1, hashLength: 32, outputType: 'encoded' })
 }
-async function passwordMatches(password: string, stored: string) { const [, salt, expected] = stored.split('$'); return Boolean(salt && expected && (await passwordHash(password, salt)).endsWith(`$${expected}`)) }
+async function legacyPasswordHash(password: string, salt: string) { const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), { name: 'PBKDF2' }, false, ['deriveBits']); const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: new TextEncoder().encode(salt), iterations: 310_000, hash: 'SHA-256' }, key, 256); return `pbkdf2-sha256$${salt}$${hex(bits)}` }
+async function passwordMatches(password: string, stored: string) { if (stored.startsWith('$argon2id$')) return (await argon2id({ password, salt: stored.split('$')[4], iterations: 3, memorySize: 19456, parallelism: 1, hashLength: 32, outputType: 'encoded' })) === stored; const [, salt, expected] = stored.split('$'); return Boolean(salt && expected && (await legacyPasswordHash(password, salt)).endsWith(`$${expected}`)) }
 async function currentAccount(request: Request, env: Env) {
   if (!env.DB) return null
   const raw = readCookie(request, cookieName(env)); if (!raw) return null
