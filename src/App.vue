@@ -11,6 +11,7 @@ import AssessmentInvite from '@/components/assessment/AssessmentInvite.vue'
 import QuizRunner from '@/components/assessment/QuizRunner.vue'
 import QuizResults from '@/components/assessment/QuizResults.vue'
 import RegistrationPreview from '@/components/assessment/RegistrationPreview.vue'
+import AccountAccessDialog from '@/components/auth/AccountAccessDialog.vue'
 import QuestionManager from '@/components/assessment/QuestionManager.vue'
 import AppDialog from '@/components/assessment/AppDialog.vue'
 import { Button } from '@/components/ui/button'
@@ -21,7 +22,7 @@ import { selectQuestions } from '@/lib/assessment'
 import type { GameMode, PokerQuestion, QuizResult } from '@/types/assessment'
 
 const view = ref<'dashboard' | 'quiz' | 'results' | 'manager'>('dashboard')
-const invite = ref(false), registration = ref(false), editorDirty = ref(false)
+const invite = ref(false), registration = ref(false), accountAccess = ref(false), editorDirty = ref(false)
 const leaveConfirmation = ref(false), pendingTarget = ref<'dashboard' | 'assessment' | 'manager'>('dashboard')
 const questions = ref<PokerQuestion[]>([]), mode = ref<GameMode>('cash'), result = ref<QuizResult>()
 const { bank } = useQuestionBank()
@@ -67,7 +68,7 @@ onBeforeUnmount(() => {
 
 <template>
   <a class="skip-link" href="#main-content">本文へスキップ</a>
-  <div class="app-shell app-ja"><AppSidebar :current="view" :show-manager="isLocalEditor" @navigate="navigate" /><div class="main-shell">
+  <div class="app-shell app-ja"><AppSidebar :current="view" :show-manager="isLocalEditor" @navigate="navigate" @auth="accountAccess = true" /><div class="main-shell">
     <header :class="['topbar', { 'topbar-hidden': headerHidden, 'topbar-elevated': headerElevated }]" @focusin="revealHeader"><div class="breadcrumb"><span>学習ルーム</span><ChevronRight :size="13" /><Transition name="crumb" mode="out-in"><strong :key="pageLabel">{{ pageLabel }}</strong></Transition></div><div class="topbar-right"><span v-if="view !== 'dashboard'" class="preview-label">ローカルプレビュー</span><button class="notification-button" disabled aria-label="通知（準備中）"><Bell :size="18" :stroke-width="1.5" /></button><div class="avatar small">G</div></div></header>
     <main id="main-content" tabindex="-1">
       <Transition name="page" mode="out-in" @after-enter="focusPage"><div :key="view" class="page-view">
@@ -85,5 +86,6 @@ onBeforeUnmount(() => {
   </div></div>
   <AssessmentInvite :open="invite" :bank="bank" @update:open="setInvite" @start="start" />
   <RegistrationPreview :open="registration" @update:open="registration = $event" />
+  <AccountAccessDialog :open="accountAccess" @update:open="accountAccess = $event" />
   <AppDialog :open="leaveConfirmation" title="この画面を離れますか？" :description="view === 'quiz' ? '診断中の回答は破棄されます。' : '保存していない問題の変更は破棄されます。'" @update:open="leaveConfirmation = $event"><div class="dialog-actions"><Button variant="outline" @click="leaveConfirmation = false">この画面に戻る</Button><Button class="primary-action" @click="applyNavigation(pendingTarget)">破棄して移動</Button></div></AppDialog>
 </template>

@@ -5,6 +5,7 @@ import './assessment.css'
 import './poker-replay.css'
 import './finish.css'
 import './registration.css'
+import './auth.css'
 import App from './App.vue'
 
 createApp(App).mount('#app')
